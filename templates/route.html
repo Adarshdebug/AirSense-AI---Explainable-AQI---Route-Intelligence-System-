@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AQI Route Exposure | AirSense AI</title>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div class="app">
+
+    <!-- HEADER -->
+    <h1>🛣️ AirSense <span>Route AI</span></h1>
+    <p class="subtitle">Healthiest Route Based on Air Quality</p>
+
+    <!-- INPUT CARD -->
+    <div class="card">
+        <label>Start Location</label>
+        <input id="start" placeholder="e.g. MG Road">
+
+        <label style="margin-top:8px;">Destination</label>
+        <input id="destination" placeholder="e.g. Park Street">
+
+        <label style="margin-top:8px;">Travel Mode</label>
+        <select id="travelMode">
+            <option value="walking">🚶 Walking</option>
+            <option value="transport">🚗 Transport</option>
+        </select>
+
+        <button onclick="getRouteExposure()">Find Healthiest Route</button>
+    </div>
+
+    <!-- RESULT -->
+    <div id="routeResult" class="result hidden"></div>
+
+    <!-- NAV -->
+    <footer>
+        <a href="/" style="color:#22c55e;">← AQI Prediction</a>
+    </footer>
+
+</div>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
