@@ -6,3 +6,8 @@ numpy
 pandas
 scikit-learn
 joblib
+osmnx
+networkx
+shapely
+pyproj
+geopandas
