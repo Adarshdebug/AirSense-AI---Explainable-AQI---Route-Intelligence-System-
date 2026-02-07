@@ -1,241 +1,223 @@
-from dotenv import load_dotenv
-load_dotenv()
-
-from flask import Flask, render_template, request, jsonify
-from flask_cors import CORS
+import streamlit as st
+from streamlit_folium import st_folium
+import folium
+import osmnx as ox
+import networkx as nx
 import pandas as pd
 import numpy as np
+from datetime import datetime, timedelta
 import joblib
-import requests
-import os
-from datetime import datetime
 
-# ---------------- API KEYS ----------------
-OPENWEATHER_KEY = os.getenv("OPENWEATHER_API_KEY")
-ORS_KEY = os.getenv("ORS_API_KEY")
+# =====================================================
+# STREAMLIT CONFIG
+# =====================================================
+st.set_page_config(page_title="Safest Route AI", layout="wide")
+st.title("🫁 Safest Route AI")
+st.caption("ML-based AQI prediction + safest route (OSMnx + Folium)")
 
-if not OPENWEATHER_KEY:
-    raise RuntimeError("OPENWEATHER_API_KEY not set")
+# =====================================================
+# SESSION STATE
+# =====================================================
+if "route_result" not in st.session_state:
+    st.session_state.route_result = None
 
-if not ORS_KEY:
-    raise RuntimeError("ORS_API_KEY not set")
+# =====================================================
+# LOAD ML MODEL + DATA
+# =====================================================
+@st.cache_resource
+def load_ml():
+    model = joblib.load("aqi_rf_delhi_ncr.pkl")
+    feature_order = joblib.load("feature_orderv6.pkl")
+    df = pd.read_csv("delhi_ncr_area_wise_aqi_engineered.csv")
+    area_feature_table = df.groupby("Area").mean(numeric_only=True)
+    return model, feature_order, area_feature_table
 
-# ---------------- APP ----------------
-app = Flask(__name__)
-CORS(app)
+model, feature_order, area_feature_table = load_ml()
 
-# ---------------- LOAD ML ASSETS ----------------
-model = joblib.load("aqi_elastic_model.pkl")
-scaler = joblib.load("aqi_scaler.pkl")
-le = joblib.load("city_encoder.pkl")
-feature_order = joblib.load("feature_order.pkl")
-
-# ---------------- CPCB AQI FORMULA ----------------
-AQI_BREAKPOINTS = {
-    "PM2.5": [(0,30,0,50),(31,60,51,100),(61,90,101,200),(91,120,201,300),(121,250,301,400),(251,500,401,500)],
-    "NO2": [(0,40,0,50),(41,80,51,100),(81,180,101,200),(181,280,201,300),(281,400,301,400),(401,1000,401,500)],
-    "SO2": [(0,40,0,50),(41,80,51,100),(81,380,101,200),(381,800,201,300),(801,1600,301,400),(1601,3000,401,500)],
-    "O3": [(0,50,0,50),(51,100,51,100),(101,168,101,200),(169,208,201,300),(209,748,301,400),(749,1000,401,500)]
+# =====================================================
+# AREA COORDINATES
+# =====================================================
+AREA_COORDS = {
+    "Rohini": (28.7499, 77.0565),
+    "Pitampura": (28.7033, 77.1310),
+    "Karol Bagh": (28.6517, 77.1906),
+    "Connaught Place": (28.6315, 77.2167),
+    "Janakpuri": (28.6219, 77.0878),
+    "Saket": (28.5244, 77.2066),
+    "Lajpat Nagar": (28.5677, 77.2433),
+    "Ashok Vihar": (28.6923, 77.1717),
+    "Faridabad": (28.4089, 77.3178),
 }
 
-def sub_index(cp, pollutant):
-    for bp_lo, bp_hi, i_lo, i_hi in AQI_BREAKPOINTS[pollutant]:
-        if bp_lo <= cp <= bp_hi:
-            return ((i_hi - i_lo) / (bp_hi - bp_lo)) * (cp - bp_lo) + i_lo
-    return 0
+AREAS = sorted(AREA_COORDS.keys())
 
-def calculate_aqi(pollutants):
-    return int(max(sub_index(v, p) for p, v in pollutants.items()))
+# =====================================================
+# AQI PREDICTION
+# =====================================================
+aqi_cache = {}
 
-# ---------------- ML REASON ----------------
-def ml_reason(model, input_df):
-    input_df = input_df[feature_order]
-    impact = np.abs(model.coef_ * input_df.values[0])
+def predict_next_day_aqi(area):
+    if area in aqi_cache:
+        return aqi_cache[area]
 
-    df = pd.DataFrame({
-        "feature": feature_order,
-        "impact": impact
-    })
-    df["percent"] = (df["impact"] / df["impact"].sum()) * 100
-    return df.sort_values("percent", ascending=False).head(3)
+    if area not in area_feature_table.index:
+        return 150.0
 
-# ---------------- PAGES ----------------
-@app.route("/")
-def home():
-    return render_template("index.html")
+    features = area_feature_table.loc[area].to_dict()
+    features["Month"] = (datetime.now() + timedelta(days=1)).month
 
-@app.route("/route")
-def route_page():
-    return render_template("route.html")
+    X = pd.DataFrame([features]).reindex(columns=feature_order, fill_value=0)
+    pred = float(model.predict(X)[0])
+    aqi_cache[area] = pred
+    return pred
 
-# ---------------- AQI PREDICTION ----------------
-@app.route("/predict", methods=["POST"])
-def predict():
-    try:
-        city = request.json.get("city")
+# =====================================================
+# LOAD OSM ROAD NETWORK
+# =====================================================
+@st.cache_resource
+def load_graph():
+    ox.settings.use_cache = True
+    ox.settings.log_console = False
+    return ox.graph_from_place("Delhi, India", network_type="drive", simplify=True)
 
-        if city not in le.classes_:
-            return jsonify({"error": "City not supported"}), 400
+G = load_graph()
 
-        geo = requests.get(
-            "https://api.openweathermap.org/geo/1.0/direct",
-            params={"q": city, "limit": 1, "appid": OPENWEATHER_KEY}
-        ).json()
+# =====================================================
+# ROUTING HELPERS (OSMnx)
+# =====================================================
+def nearest_node(area):
+    lat, lon = AREA_COORDS[area]
+    return ox.distance.nearest_nodes(G, lon, lat)
 
-        if not geo:
-            return jsonify({"error": "City not found"}), 404
+def aqi_weight(u, v, data):
+    length = data.get("length", 1.0)
+    avg_aqi = np.mean([predict_next_day_aqi(a) for a in AREA_COORDS])
+    return length * (avg_aqi / 100)
 
-        lat, lon = geo[0]["lat"], geo[0]["lon"]
+def fastest_route(start, end):
+    return nx.shortest_path(G, nearest_node(start), nearest_node(end), weight="length")
 
-        pollution = requests.get(
-            "http://api.openweathermap.org/data/2.5/air_pollution",
-            params={"lat": lat, "lon": lon, "appid": OPENWEATHER_KEY}
-        ).json()
+def safest_route(start, end):
+    return nx.shortest_path(G, nearest_node(start), nearest_node(end), weight=aqi_weight)
 
-        comp = pollution["list"][0]["components"]
+def route_distance_km(path):
+    dist = 0
+    for u, v in zip(path[:-1], path[1:]):
+        data = list(G.get_edge_data(u, v).values())[0]
+        dist += data.get("length", 0)
+    return round(dist / 1000, 2)
 
-        pm25, no, no2, so2, o3 = (
-            comp["pm2_5"], comp["no"], comp["no2"], comp["so2"], comp["o3"]
+def path_to_latlon(path):
+    return [[G.nodes[n]["y"], G.nodes[n]["x"]] for n in path]
+
+# =====================================================
+# HEALTH ADVICE
+# =====================================================
+def health_advice(aqi):
+    if aqi <= 50:
+        return "Good 😊"
+    elif aqi <= 100:
+        return "Moderate 🙂"
+    elif aqi <= 200:
+        return "Poor 😷 – avoid long exposure"
+    else:
+        return "Very Poor ☠️ – avoid travel"
+
+# =====================================================
+# FOLIUM MAP RENDER
+# =====================================================
+def render_folium_map(fast_path, safe_path, start_area, end_area):
+    fast_coords = path_to_latlon(fast_path)
+    safe_coords = path_to_latlon(safe_path)
+
+    s_lat, s_lon = AREA_COORDS[start_area]
+
+    m = folium.Map(
+        location=[s_lat, s_lon],
+        zoom_start=11,
+        tiles="OpenStreetMap"
+    )
+
+    folium.PolyLine(
+        fast_coords,
+        color="red",
+        weight=5,
+        tooltip="Fastest Route"
+    ).add_to(m)
+
+    folium.PolyLine(
+        safe_coords,
+        color="green",
+        weight=5,
+        tooltip="Safest Route"
+    ).add_to(m)
+
+    folium.Marker(
+        fast_coords[0],
+        popup=f"Start: {start_area}",
+        icon=folium.Icon(color="blue")
+    ).add_to(m)
+
+    folium.Marker(
+        fast_coords[-1],
+        popup=f"End: {end_area}",
+        icon=folium.Icon(color="red")
+    ).add_to(m)
+
+    st_folium(m, width=700, height=520)
+
+# =====================================================
+# SIDEBAR UI
+# =====================================================
+st.sidebar.header("📍 Route Selection")
+start_area = st.sidebar.selectbox("Start Location", AREAS)
+end_area = st.sidebar.selectbox("Destination", AREAS)
+
+# =====================================================
+# BUTTON ACTION
+# =====================================================
+if st.sidebar.button("🧭 Find Safest Route"):
+    fast = fastest_route(start_area, end_area)
+    safe = safest_route(start_area, end_area)
+
+    avg_aqi = np.mean([
+        predict_next_day_aqi(start_area),
+        predict_next_day_aqi(end_area)
+    ])
+
+    st.session_state.route_result = {
+        "fast_path": fast,
+        "safe_path": safe,
+        "fast_dist": route_distance_km(fast),
+        "safe_dist": route_distance_km(safe),
+        "aqi": round(avg_aqi, 2),
+        "health": health_advice(avg_aqi),
+    }
+
+# =====================================================
+# DISPLAY RESULT
+# =====================================================
+if st.session_state.route_result:
+    r = st.session_state.route_result
+
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        st.subheader("🚗 Fastest Route")
+        st.write("Distance:", r["fast_dist"], "km")
+
+        st.subheader("🌿 Safest Route (Recommended)")
+        st.write("Distance:", r["safe_dist"], "km")
+
+        st.subheader("🌫 AQI & Health Advisory")
+        st.write("Predicted AQI:", r["aqi"])
+        st.write("Health:", r["health"])
+
+    with col2:
+        st.subheader("🗺 Live Route Map")
+        render_folium_map(
+            r["fast_path"],
+            r["safe_path"],
+            start_area,
+            end_area
         )
-        co = comp["co"] / 1000
-
-        formula_aqi = calculate_aqi({
-            "PM2.5": pm25,
-            "NO2": no2,
-            "SO2": so2,
-            "O3": o3
-        })
-
-        now = datetime.now()
-        city_encoded = le.transform([city])[0]
-
-        input_df = pd.DataFrame([{
-            "City": city_encoded,
-            "PM2.5": pm25,
-            "NO": no,
-            "NO2": no2,
-            "CO": co,
-            "SO2": so2,
-            "O3": o3,
-            "day": now.day,
-            "month": now.month,
-            "year": now.year
-        }])
-
-        ml_pred = model.predict(
-            scaler.transform(input_df[feature_order])
-        )[0]
-
-        reasons = [
-            {"pollutant": r["feature"], "impact_percent": round(r["percent"], 2)}
-            for _, r in ml_reason(model, input_df).iterrows()
-        ]
-
-        return jsonify({
-            "city": city,
-            "official_aqi_formula": formula_aqi,
-            "aqi_category": (
-                "Good 🟢" if formula_aqi <= 50 else
-                "Satisfactory 🟡" if formula_aqi <= 100 else
-                "Moderate 🟠" if formula_aqi <= 200 else
-                "Poor 🔴" if formula_aqi <= 300 else
-                "Very Poor / Severe ⚫"
-            ),
-            "ml_estimate": int(ml_pred),
-            "reasons": reasons
-        })
-
-    except Exception as e:
-        print("AQI ERROR:", e)
-        return jsonify({"error": "Server error"}), 500
-
-# ---------------- ROUTE EXPOSURE (ORS – FIXED) ----------------
-@app.route("/route-exposure", methods=["POST"])
-def route_exposure():
-    try:
-        data = request.json
-        start = data.get("start")
-        destination = data.get("destination")
-        mode = data.get("mode", "walking")
-
-        if not start or not destination:
-            return jsonify({"error": "Start and destination required"}), 400
-
-        # -------- Nominatim (User-Agent REQUIRED) --------
-        def geocode(place):
-            res = requests.get(
-                "https://nominatim.openstreetmap.org/search",
-                params={"q": place, "format": "json", "limit": 1},
-                headers={"User-Agent": "AirSenseAI/1.0"}
-            ).json()
-            if not res:
-                return None
-            return [float(res[0]["lon"]), float(res[0]["lat"])]
-
-        start_coord = geocode(start)
-        end_coord = geocode(destination)
-
-        if not start_coord or not end_coord:
-            return jsonify({"error": "Unable to geocode locations"}), 400
-
-        profile = "foot-walking" if mode == "walking" else "driving-car"
-
-        ors_res = requests.post(
-            f"https://api.openrouteservice.org/v2/directions/{profile}",
-            headers={
-                "Authorization": ORS_KEY,
-                "Content-Type": "application/json"
-            },
-            json={"coordinates": [start_coord, end_coord]}
-        ).json()
-
-        if "features" not in ors_res:
-            print("ORS ERROR:", ors_res)
-            return jsonify({"error": "Route data unavailable"}), 500
-
-        evaluated_routes = []
-
-        for r in ors_res["features"]:
-            summary = r["properties"]["summary"]
-            coords = r["geometry"]["coordinates"]
-
-            sample_points = [
-                coords[0],
-                coords[len(coords)//2],
-                coords[-1]
-            ]
-
-            aqi_vals = []
-            for lon, lat in sample_points:
-                aqi = requests.get(
-                    "http://api.openweathermap.org/data/2.5/air_pollution",
-                    params={"lat": lat, "lon": lon, "appid": OPENWEATHER_KEY}
-                ).json()["list"][0]["main"]["aqi"] * 50
-                aqi_vals.append(aqi)
-
-            avg_aqi = sum(aqi_vals) / len(aqi_vals)
-            time_min = summary["duration"] / 60
-            exposure = avg_aqi * time_min
-
-            evaluated_routes.append({
-                "distance_km": round(summary["distance"] / 1000, 2),
-                "time_min": round(time_min, 1),
-                "avg_aqi": round(avg_aqi, 1),
-                "exposure_score": round(exposure, 1)
-            })
-
-        best_route = min(evaluated_routes, key=lambda x: x["exposure_score"])
-
-        return jsonify({
-            "recommended_mode": "Transport" if best_route["avg_aqi"] > 150 else "Walking",
-            "best_route": best_route,
-            "all_routes": evaluated_routes
-        })
-
-    except Exception as e:
-        print("ROUTE ERROR:", e)
-        return jsonify({"error": "Server error"}), 500
-
-# ---------------- RUN ----------------
-if __name__ == "__main__":
-    app.run(debug=True)
