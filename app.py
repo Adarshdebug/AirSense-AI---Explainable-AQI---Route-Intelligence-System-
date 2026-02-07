@@ -8,22 +8,16 @@ import numpy as np
 from datetime import datetime, timedelta
 import joblib
 
-# =====================================================
-# STREAMLIT CONFIG
-# =====================================================
+
 st.set_page_config(page_title="Safest Route AI", layout="wide")
 st.title("🫁 Safest Route AI")
 st.caption("ML-based AQI prediction + safest route (OSMnx + Folium)")
 
-# =====================================================
-# SESSION STATE
-# =====================================================
+
 if "route_result" not in st.session_state:
     st.session_state.route_result = None
 
-# =====================================================
-# LOAD ML MODEL + DATA
-# =====================================================
+
 @st.cache_resource
 def load_ml():
     model = joblib.load("aqi_rf_delhi_ncr.pkl")
@@ -34,9 +28,7 @@ def load_ml():
 
 model, feature_order, area_feature_table = load_ml()
 
-# =====================================================
-# AREA COORDINATES
-# =====================================================
+
 AREA_COORDS = {
     "Rohini": (28.7499, 77.0565),
     "Pitampura": (28.7033, 77.1310),
@@ -51,9 +43,7 @@ AREA_COORDS = {
 
 AREAS = sorted(AREA_COORDS.keys())
 
-# =====================================================
-# AQI PREDICTION
-# =====================================================
+
 aqi_cache = {}
 
 def predict_next_day_aqi(area):
@@ -71,9 +61,7 @@ def predict_next_day_aqi(area):
     aqi_cache[area] = pred
     return pred
 
-# =====================================================
-# LOAD OSM ROAD NETWORK
-# =====================================================
+
 @st.cache_resource
 def load_graph():
     ox.settings.use_cache = True
@@ -82,9 +70,7 @@ def load_graph():
 
 G = load_graph()
 
-# =====================================================
-# ROUTING HELPERS (OSMnx)
-# =====================================================
+
 def nearest_node(area):
     lat, lon = AREA_COORDS[area]
     return ox.distance.nearest_nodes(G, lon, lat)
@@ -110,9 +96,7 @@ def route_distance_km(path):
 def path_to_latlon(path):
     return [[G.nodes[n]["y"], G.nodes[n]["x"]] for n in path]
 
-# =====================================================
-# HEALTH ADVICE
-# =====================================================
+
 def health_advice(aqi):
     if aqi <= 50:
         return "Good 😊"
@@ -123,9 +107,7 @@ def health_advice(aqi):
     else:
         return "Very Poor ☠️ – avoid travel"
 
-# =====================================================
-# FOLIUM MAP RENDER
-# =====================================================
+
 def render_folium_map(fast_path, safe_path, start_area, end_area):
     fast_coords = path_to_latlon(fast_path)
     safe_coords = path_to_latlon(safe_path)
@@ -166,16 +148,12 @@ def render_folium_map(fast_path, safe_path, start_area, end_area):
 
     st_folium(m, width=700, height=520)
 
-# =====================================================
-# SIDEBAR UI
-# =====================================================
+
 st.sidebar.header("📍 Route Selection")
 start_area = st.sidebar.selectbox("Start Location", AREAS)
 end_area = st.sidebar.selectbox("Destination", AREAS)
 
-# =====================================================
-# BUTTON ACTION
-# =====================================================
+
 if st.sidebar.button("🧭 Find Safest Route"):
     fast = fastest_route(start_area, end_area)
     safe = safest_route(start_area, end_area)
@@ -194,9 +172,7 @@ if st.sidebar.button("🧭 Find Safest Route"):
         "health": health_advice(avg_aqi),
     }
 
-# =====================================================
-# DISPLAY RESULT
-# =====================================================
+
 if st.session_state.route_result:
     r = st.session_state.route_result
 
