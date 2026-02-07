@@ -19,3 +19,24 @@ shapely
 pyproj
 geopandas
 >>>>>>> 25dc4d8f1dfa619c46855a7ceaa76e409ee9dc94
+
+
+
+streamlit==1.32.2
+altair==4.2.2
+streamlit-folium==0.18.0
+folium==0.20.0
+
+osmnx==2.0.7
+networkx==3.6.1
+geopandas==1.1.2
+shapely==2.1.2
+pyproj==3.7.2
+pyogrio==0.12.1
+
+numpy==1.26.4
+pandas==2.3.3
+scikit-learn==1.8.0
+joblib==1.5.3
+rich<14
+
