@@ -1,21 +1,15 @@
-<<<<<<< HEAD
-streamlit
-streamlit-folium
-=======
 streamlit==1.32.2
 altair==4.2.2
 streamlit-folium==0.18.0
->>>>>>> 25dc4d8f1dfa619c46855a7ceaa76e409ee9dc94
+Flask==3.0.2
+flask-cors==4.0.0
 folium
 numpy
 pandas
 scikit-learn
 joblib
-<<<<<<< HEAD
-=======
 osmnx
 networkx
 shapely
 pyproj
 geopandas
->>>>>>> 25dc4d8f1dfa619c46855a7ceaa76e409ee9dc94
