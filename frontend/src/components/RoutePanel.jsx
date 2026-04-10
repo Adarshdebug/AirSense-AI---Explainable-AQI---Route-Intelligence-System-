@@ -94,7 +94,7 @@ export default function RoutePanel({
     <motion.div
       initial={{ y: 120, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
-      className="pointer-events-auto absolute inset-x-0 bottom-0 z-30 px-3 pb-3 sm:left-auto sm:w-[440px] sm:px-5 sm:pb-5"
+      className="pointer-events-auto absolute inset-x-0 bottom-0 z-[1200] px-3 pb-3 sm:left-auto sm:w-[440px] sm:px-5 sm:pb-5"
     >
       <div className="glass-panel panel-strong route-panel-scroll max-h-[76vh] overflow-y-auto rounded-t-[30px] rounded-b-[28px] sm:max-h-[calc(100vh-180px)]">
         <div className="sticky top-0 z-10 rounded-t-[30px] bg-[var(--bg-panel-strong)] px-4 pb-3 pt-3 backdrop-blur xl:px-5">

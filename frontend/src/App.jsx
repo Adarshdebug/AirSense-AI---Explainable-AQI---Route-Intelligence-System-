@@ -10,12 +10,13 @@ import {
   Moon,
   SunMedium
 } from "lucide-react";
-import MapView from "./components/MapView";
+import MapView from "./components/MapViewOSM";
 import RoutePanel from "./components/RoutePanel";
 import SearchBar from "./components/SearchBar";
 import { useVoiceNavigator } from "./components/VoiceNavigator";
 import { fetchAreas, fetchAqiOverlay, fetchSafeRoute } from "./lib/api";
 import { distanceToRoute, nearestArea } from "./lib/geo";
+import { enhanceRoutesWithBrowserOsrm } from "./lib/osmRouting";
 
 function ControlButton({ onClick, children, active = false, label }) {
   return (
@@ -115,11 +116,12 @@ export default function App() {
 
     try {
       const response = await fetchSafeRoute(nextStart, nextDestination);
-      setRouteBundle(response);
+      const enhancedResponse = await enhanceRoutesWithBrowserOsrm(response, areas);
+      setRouteBundle(enhancedResponse);
       setSelectedRouteId(preferredRouteId);
 
-      const highlighted = response.routes.find((route) => route.id === preferredRouteId) || response.routes[0];
-      if (highlighted?.averageAqi > response.safeLimit) {
+      const highlighted = enhancedResponse.routes.find((route) => route.id === preferredRouteId) || enhancedResponse.routes[0];
+      if (highlighted?.averageAqi > enhancedResponse.safeLimit) {
         setAlertMessage(`Selected route crosses elevated AQI zones. Average AQI is ${highlighted.averageAqi}.`);
       } else {
         setAlertMessage("");
@@ -180,7 +182,6 @@ export default function App() {
         userPosition={userPosition}
         showHeatmap={showHeatmap}
         followUser={followUser}
-        darkMode={darkMode}
       />
 
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/42 via-transparent to-transparent dark:from-slate-950/20" />
@@ -201,7 +202,7 @@ export default function App() {
         isMobileCompact={window.innerWidth < 640}
       />
 
-      <div className="pointer-events-auto absolute right-3 top-[146px] z-30 flex flex-col gap-3 sm:right-5 sm:top-[154px]">
+      <div className="pointer-events-auto absolute right-3 top-[146px] z-[1200] flex flex-col gap-3 sm:right-5 sm:top-[154px]">
         <ControlButton
           onClick={() => setFollowUser((value) => !value)}
           active={followUser}
@@ -238,7 +239,7 @@ export default function App() {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="pointer-events-none absolute left-3 right-20 top-[154px] z-20 sm:left-5 sm:right-[96px] sm:top-[170px]"
+            className="pointer-events-none absolute left-3 right-20 top-[154px] z-[1100] sm:left-5 sm:right-[96px] sm:top-[170px]"
           >
             <div className="glass-panel rounded-2xl px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-100">
               {isLoading ? (

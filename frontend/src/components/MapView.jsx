@@ -9,6 +9,7 @@ const ROUTE_COLORS = {
 };
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || "";
+const HAS_MAPBOX_TOKEN = Boolean(mapboxgl.accessToken);
 
 function makeRouteCollection(routes) {
   return {
@@ -63,6 +64,10 @@ export default function MapView({
   );
 
   useEffect(() => {
+    if (!HAS_MAPBOX_TOKEN) {
+      return;
+    }
+
     if (!mapNodeRef.current || mapRef.current) {
       return;
     }
@@ -162,6 +167,10 @@ export default function MapView({
   }, [darkMode, overlayPoints, routeBundle?.routes, selectedRouteId, showHeatmap]);
 
   useEffect(() => {
+    if (!HAS_MAPBOX_TOKEN) {
+      return;
+    }
+
     const map = mapRef.current;
     if (!map?.isStyleLoaded() || !map.getSource("routes")) {
       return;
@@ -195,6 +204,10 @@ export default function MapView({
   }, [routeBundle, selectedRoute, selectedRouteId]);
 
   useEffect(() => {
+    if (!HAS_MAPBOX_TOKEN) {
+      return;
+    }
+
     const map = mapRef.current;
     if (!map?.isStyleLoaded() || !map.getSource("aqi-points")) {
       return;
@@ -211,6 +224,10 @@ export default function MapView({
   }, [overlayPoints, showHeatmap]);
 
   useEffect(() => {
+    if (!HAS_MAPBOX_TOKEN) {
+      return;
+    }
+
     const map = mapRef.current;
     if (!map || !userPosition) {
       return;
@@ -232,6 +249,20 @@ export default function MapView({
       });
     }
   }, [followUser, userPosition]);
+
+  if (!HAS_MAPBOX_TOKEN) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.18),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(59,130,246,0.18),transparent_30%),#eaf2f1] px-6 text-center dark:bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.16),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(59,130,246,0.14),transparent_30%),#081114]">
+        <div className="glass-panel max-w-xl rounded-[32px] p-6 sm:p-8">
+          <h2 className="font-['Sora'] text-xl font-semibold">Map token required</h2>
+          <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+            Create <code>.env</code> inside the frontend folder and set <code>VITE_MAPBOX_ACCESS_TOKEN</code> to a valid
+            Mapbox token, then restart <code>npm run dev</code>.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return <div ref={mapNodeRef} className="absolute inset-0" />;
 }

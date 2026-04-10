@@ -39,7 +39,7 @@ export default function SearchBar({
     <motion.div
       initial={{ y: -20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
-      className="pointer-events-auto absolute inset-x-3 top-3 z-30 mx-auto w-[min(920px,calc(100%-1.5rem))] sm:top-5"
+      className="pointer-events-auto absolute inset-x-3 top-3 z-[1200] mx-auto w-[min(920px,calc(100%-1.5rem))] sm:top-5"
     >
       <div className="glass-panel panel-strong rounded-[30px] p-3 sm:p-4">
         <div className="flex items-center gap-3 px-2 pb-2">

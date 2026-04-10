@@ -1,13 +1,27 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
 async function request(path, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {})
-    },
-    ...options
-  });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 25000);
+
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {})
+      },
+      signal: controller.signal,
+      ...options
+    });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error("Route service is taking too long. Please try again.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
 
   const payload = await response.json();
 
